@@ -1,6 +1,8 @@
 # 🚀 FORM PIPELINE PROJECT - COMPLETE HANDOFF
 
-**Last Updated**: Phase 4 Complete | Ready for Phase 5
+**Last Updated**: Phases 1-6 Complete | ⚠️ **CRITICAL ISSUE IN PROGRESS** - Second Submission Hanging
+
+**Current Status**: App is functional for FIRST submission only. Second submissions hang on Row 3. Multiple debugging attempts in progress.
 
 ---
 
@@ -421,6 +423,460 @@ playwright install chromium  # Chromium browser installed
 
 ---
 
+### Phase 5: Backend - Submission API & State Management ✓
+**Git Commits**: Multiple commits for implementation and bug fixes
+
+**Files Created**:
+1. `backend/submission_manager.py` - SubmissionManager class with state tracking
+2. Updated `backend/main.py` - Added 5 new endpoints
+
+**Endpoints Implemented**:
+
+```python
+POST /submit
+- Input: {url: string, students: Array<{row_number, data}>}
+- Action: Start async submission process
+- Response: {success: true, message: "Started submission: N students"}
+
+GET /status
+- Returns: {
+    status: "idle" | "running" | "paused" | "completed" | "killed",
+    current_position: 3,
+    total: 7,
+    completed: 2,
+    failed: 1,
+    elapsed_seconds: 45,
+    log: [{row, status, student, timestamp, error?}],
+    errors: ["Row 3: Network timeout"]
+  }
+
+POST /pause
+- Action: Set state to paused at current position
+- Response: {success: true, message: "Paused"}
+
+POST /resume  
+- Action: Resume from paused position
+- Response: {success: true, message: "Resumed"}
+
+POST /kill
+- Action: Stop completely and cleanup
+- Response: {success: true, message: "Killed"}
+```
+
+**SubmissionManager Class**:
+- Singleton pattern (one instance per server)
+- Manages FormAutomation lifecycle
+- Tracks submission state and progress
+- Handles pause/resume/kill operations
+- Stores logs and errors
+- Calculates elapsed time
+- Skips rows with `status: "skipped"`
+- Processes only `status in ["ok", "fixed"]`
+- Includes 0.2 second delay between students for browser stability
+
+**Key Implementation Details**:
+- Uses `asyncio.create_task()` for background processing
+- State stored in memory (resets on server restart)
+- FormAutomation instance created per submission
+- Browser closed when submission completes/kills
+- Retry logic inherited from FormAutomation (3 attempts per student)
+
+---
+
+### Phase 6: Frontend - Tab 2 Submission Interface ✓
+**Git Commit**: Tab 2 implementation with real-time tracking
+
+**File Updated**:
+- `frontend/components/Tab2Submit.tsx` - Complete implementation
+
+**Features Implemented**:
+
+✅ **Data Loading**:
+- Loads cleaned data from localStorage on mount
+- Displays summary: "X students ready (Y with valid data)"
+- Shows target URL from Tab 1
+- Validates data exists before allowing submission
+
+✅ **Control Buttons**:
+- **Start Submission** (Green) - Initiates batch submission
+- **Pause** (Yellow) - Pauses at current position
+- **Resume** (Blue) - Continues from pause point (shown only when paused)
+- **Kill Switch** (Red) - Stops completely, requires restart
+
+✅ **Real-Time Progress Display**:
+- Progress bar showing completion percentage
+- Counter: "X / Y Completed"
+- Client-side timer (increments every 1 second locally)
+- Status indicator (Running, Paused, Completed, Killed)
+
+✅ **Live Log**:
+- Shows every submission attempt
+- Green ✓ for success
+- Red ✗ for failure
+- Auto-scrolls to latest entry
+- Displays: Row #, Student Name, Status, Error (if failed)
+- Timestamp for each entry
+
+✅ **Final Summary** (on completion):
+- Total success/failure counts
+- Elapsed time
+- Failed rows table with details
+- Each failed row shows: Row #, Student Name, Email, Error message
+
+✅ **Status Polling**:
+- Polls backend `/status` endpoint every 1 second
+- Updates UI with latest progress
+- Independent client-side timer for smooth display
+- Stops polling when not running
+
+---
+
+## ⚠️ CRITICAL ISSUE: Second Submission Hanging on Row 3
+
+### **Current Problem Statement**:
+
+The application works perfectly for the FIRST submission:
+- User uploads spreadsheet → Tab 1 cleans data → Tab 2 submits all students → Success ✅
+
+However, when user tries a SECOND submission (after Clear + Refresh or just restarting):
+- Row 1 (student 2): ✅ Succeeds
+- Row 2 (student 3): ❌ **HANGS INDEFINITELY**
+- Pause button does NOT respond during hang
+
+### **Observed Symptoms**:
+
+From terminal logs:
+```
+First Submission:
+INFO:submission_manager:Processing Row 2: Brithany Avila
+INFO:form_automation:Navigating to: [URL]
+INFO:form_automation:Filling email: bsavila03@gmail.com
+INFO:form_automation:Filling first name: Brithany
+...
+INFO:form_automation:✓ Form filled (NOT submitted - testing mode)
+INFO:submission_manager:✓ Row 2: Success - Brithany Avila
+
+INFO:submission_manager:Processing Row 3: Bennett Navarrete  
+INFO:form_automation:Navigating to: [URL]
+...
+(All 7 students succeed) ✅
+
+Second Submission (same data):
+INFO:submission_manager:Processing Row 2: Brithany Avila
+INFO:form_automation:Navigating to: [URL]
+INFO:form_automation:Filling email: bsavila03@gmail.com
+INFO:form_automation:Filling first name: Brithany
+...
+INFO:submission_manager:✓ Row 2: Success - Brithany Avila
+
+INFO:submission_manager:Processing Row 3: Bennett Navarrete
+(No "Navigating to:" log appears)
+(Just GET /status polling continues indefinitely) ❌
+```
+
+**Key Observations**:
+1. First student succeeds in second submission
+2. Second student never starts (no navigation log)
+3. Process appears stuck before `fill_form()` is called
+4. No error logs, just silent hang
+5. Pause button sends request but doesn't actually pause
+
+### **Root Cause Analysis**:
+
+The issue is related to Playwright browser/context/page lifecycle management. The problem occurs when trying to reuse or recreate browser components after a previous submission has completed.
+
+**Playwright Architecture**:
+```
+Browser (Chromium process)
+  └── Context (isolated session)
+        └── Page (browser tab)
+```
+
+**Issue**: After first submission completes:
+- Browser is properly closed
+- On second submission, new browser is created
+- But something in the context/page management causes hanging
+
+### **Debugging Attempts & Current Implementation**:
+
+#### **Attempt 1**: Reuse Single Context Across All Students
+**Commit**: `b5c6b64` - "Major fix: Reuse single browser context/page across all students"
+
+**Approach**:
+```python
+# In start()
+self.context = await self.browser.new_context()  
+self.page = await self.context.new_page()
+
+# In fill_form() - reuse same page
+await self.page.goto(url)
+await self.page.fill(...)
+```
+
+**Result**: ❌ First submission works, second submission hangs on Row 3
+**Problem**: `page.goto()` was timing out (30 seconds) on the second student
+
+---
+
+#### **Attempt 2**: Create Fresh Page Per Student
+**Commit**: `234057c` - "Fix: Create fresh page per student to avoid navigation timeout"
+
+**Approach**:
+```python
+# In fill_form() - create new page for each student
+if self.page:
+    await self.page.close()
+self.page = await self.context.new_page()
+await self.page.goto(url)
+```
+
+**Result**: ❌ Even first student failed
+**Problem**: Closing and immediately creating pages caused `page.fill()` to hang
+
+---
+
+#### **Attempt 3**: Track Page Usage with Flag
+**Commit**: `f22eb0f` - "Fix: Track page usage to avoid recreating page for first student"
+
+**Approach**:
+```python
+# Add flag to track if page has been used
+self.page_used = False
+
+# In fill_form()
+if self.page_used:
+    # Close old page, create fresh one
+    await self.page.close()
+    self.page = await self.context.new_page()
+
+await self.page.goto(url)
+# ... fill form ...
+
+self.page_used = True  # Mark as used after success
+```
+
+**Result**: ❌ STILL HANGING on second submission at Row 3
+**Current Status**: This is where we are now
+
+---
+
+### **Current Code State**:
+
+**`backend/form_automation.py`** (271 lines):
+```python
+class FormAutomation:
+    def __init__(self):
+        self.browser = None
+        self.playwright = None
+        self.context = None  # Reuse same context
+        self.page = None
+        self.page_used = False  # Track if page has been used
+    
+    async def start(self):
+        """Initialize Playwright and browser."""
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(headless=True)
+        # Create single context and page
+        self.context = await self.browser.new_context()
+        self.page = await self.context.new_page()
+        self.page_used = False
+    
+    async def stop(self):
+        """Close browser and Playwright."""
+        if self.page:
+            await self.page.close()
+        if self.context:
+            await self.context.close()
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
+    
+    async def fill_form(self, url, student_data, submit=False, max_retries=3):
+        """Fill form with student data."""
+        for attempt in range(max_retries):
+            try:
+                # For 2nd+ students, create fresh page
+                if self.page_used:
+                    await self.page.close()
+                    self.page = await self.context.new_page()
+                
+                # Navigate and fill form
+                await self.page.goto(url, wait_until="networkidle", timeout=30000)
+                await self.page.fill(SELECTORS['email'], student_data['Email Address'])
+                await self.page.fill(SELECTORS['first_name'], student_data['First Name'])
+                await self.page.fill(SELECTORS['last_name'], student_data['Last Name'])
+                await self.page.fill(SELECTORS['phone'], student_data['Phone'])
+                await self.page.fill(SELECTORS['dob'], student_data['Date of Birth'])
+                await self.page.fill(SELECTORS['zip_code'], student_data['Zip Code'])
+                
+                # Click consent checkboxes with direct JavaScript
+                await self.page.evaluate('''...checkbox clicking code...''')
+                
+                # Optional submit
+                if submit:
+                    await self.page.click(SELECTORS['submit_button'])
+                
+                # Mark page as used
+                self.page_used = True
+                
+                return {'success': True, ...}
+                
+            except Exception as e:
+                # Error handling with retry logic
+                ...
+```
+
+**`backend/submission_manager.py`** (292 lines):
+```python
+class SubmissionManager:
+    def __init__(self):
+        self.state = {
+            'status': 'idle',
+            'current_position': 0,
+            'total': 0,
+            'completed': 0,
+            'failed': 0,
+            'start_time': None,
+            'log': [],
+            'errors': []
+        }
+        self.url = None
+        self.students = []
+        self.automation = None
+        self.task = None
+    
+    async def start_submission(self, url, students):
+        """Start async submission process"""
+        # Initialize state
+        # Create FormAutomation instance
+        await self.automation.start()
+        # Start background task
+        self.task = asyncio.create_task(self._process_submissions())
+    
+    async def _process_submissions(self):
+        """Background task to process students"""
+        while self.state['current_position'] < self.state['total']:
+            # Check for pause/kill
+            student = self.students[self.state['current_position']]
+            
+            # Call fill_form
+            result = await self.automation.fill_form(
+                url=self.url,
+                student_data=student['data'],
+                submit=False  # Testing mode
+            )
+            
+            # Update state based on result
+            # Log success/failure
+            
+            # 0.2 second delay between students
+            await asyncio.sleep(0.2)
+```
+
+### **What We Know**:
+
+✅ **Working**:
+- First submission completes successfully (all students)
+- Browser/context/page creation works initially
+- Form filling logic is correct
+- Checkboxes click properly
+- First student in second submission succeeds
+
+❌ **Not Working**:
+- Second student in second submission hangs
+- No error is thrown (silent hang)
+- Hang occurs BEFORE `page.goto()` is called
+- Possibly related to `page.close()` or `context.new_page()`
+
+### **Hypotheses to Test**:
+
+1. **Context State Issue**: The context might be in a bad state after first student success
+   - Even though we're creating "fresh" pages, the context might hold state
+   
+2. **Async Timing Issue**: There might be a race condition between:
+   - `page.close()` completing
+   - `context.new_page()` being called
+   - Some internal Playwright cleanup
+
+3. **Browser Process Issue**: The browser process itself might need to be restarted between submissions
+   - Currently we only restart browser on errors, not between submissions
+
+4. **Page Close Hanging**: The `await self.page.close()` call might be hanging
+   - No timeout on page.close()
+   - Could be waiting for something that never completes
+
+### **Suggested Next Steps for New Agent**:
+
+1. **Add comprehensive logging** around page lifecycle:
+   ```python
+   logger.info("Before page.close()")
+   await self.page.close()
+   logger.info("After page.close()")
+   logger.info("Before context.new_page()")
+   self.page = await self.context.new_page()
+   logger.info("After context.new_page()")
+   ```
+
+2. **Add timeout to page.close()**:
+   ```python
+   await asyncio.wait_for(self.page.close(), timeout=5.0)
+   ```
+
+3. **Try recreating context instead of page**:
+   ```python
+   if self.page_used:
+       await self.page.close()
+       await self.context.close()
+       self.context = await self.browser.new_context()
+       self.page = await self.context.new_page()
+   ```
+
+4. **Try restarting browser between submissions**:
+   - In `submission_manager.py` after first submission completes
+   - Before starting second submission
+
+5. **Check Playwright documentation** for best practices on:
+   - Page reuse vs recreation
+   - Context lifecycle management
+   - Browser cleanup
+
+### **Testing Instructions**:
+
+```bash
+# Backend
+cd /Users/ericyung/Desktop/form-pipeline/backend
+source venv/bin/activate
+uvicorn main:app --port 8000
+
+# Frontend (separate terminal)
+cd /Users/ericyung/Desktop/form-pipeline/frontend
+npm run dev
+
+# Test flow:
+1. Open http://localhost:3000
+2. Upload sample_students.xlsx
+3. Clean spreadsheet
+4. Go to Tab 2
+5. Click "Start Submission"
+6. Wait for completion (all 7 students succeed) ✅
+7. Click "Clear" button
+8. Refresh page
+9. Upload same file again
+10. Clean spreadsheet
+11. Go to Tab 2
+12. Click "Start Submission" again
+13. Watch logs - Row 2 succeeds, Row 3 hangs ❌
+```
+
+### **Related Files to Investigate**:
+
+- `backend/form_automation.py` - Playwright lifecycle management
+- `backend/submission_manager.py` - Background task and state
+- Playwright documentation on context/page management
+
+---
+
 ## 🔄 COMPLETE DATA FLOW
 
 ### Upload & Cleaning Flow (Tab 1):
@@ -515,186 +971,19 @@ playwright install chromium  # Chromium browser installed
 
 ---
 
-## 🚧 REMAINING WORK (Phases 5-10)
+## 🚧 REMAINING WORK (Phases 7-10)
 
-### Phase 5: Backend - Submission API & State Management (NEXT!)
-
-**Goal**: Build endpoints for batch form submission with pause/resume/kill controls
-
-**Files to Create**:
-1. `backend/submission_manager.py` - State management class
-2. Update `backend/main.py` - Add new endpoints
-
-**Endpoints to Build**:
-
-```python
-POST /submit
-- Input: {
-    url: "target_form_url",
-    students: [{row_number, data}, ...]  # Only ok/fixed rows
-  }
-- Action:
-  - Initialize FormAutomation
-  - Start processing students one by one
-  - Track progress in state manager
-  - Log each submission (success/failure)
-  - Skip any rows with status="skipped"
-- Response: {
-    job_id: "unique_id",
-    status: "started",
-    total: 700
-  }
-
-GET /status
-- Response: {
-    completed: 370,
-    total: 700,
-    elapsed_seconds: 125,
-    status: "running" | "paused" | "completed" | "killed",
-    log: [
-      {row: 1, status: "success", student: "John Doe"},
-      {row: 2, status: "failed", student: "Jane Smith", error: "..."}
-    ],
-    errors: ["Row 5: Network timeout", ...]
-  }
-
-POST /pause
-- Action: Set state to "paused", remember current position
-- Response: {status: "paused", position: 370}
-
-POST /resume
-- Action: Continue from paused position
-- Response: {status: "running", resumed_from: 370}
-
-POST /kill
-- Action: Stop completely, reset state
-- Response: {status: "killed", final_position: 370}
-```
-
-**State Manager Class**:
-```python
-class SubmissionManager:
-    def __init__(self):
-        self.state = {
-            'status': 'idle',  # idle/running/paused/completed/killed
-            'current_position': 0,
-            'total': 0,
-            'completed': 0,
-            'failed': 0,
-            'start_time': None,
-            'log': [],
-            'errors': []
-        }
-    
-    async def start_submission(self, url, students):
-        """Start processing students"""
-    
-    async def pause(self):
-        """Pause at current position"""
-    
-    async def resume(self):
-        """Resume from paused position"""
-    
-    async def kill(self):
-        """Stop completely"""
-    
-    def get_status(self):
-        """Return current state"""
-```
-
-**Key Logic**:
-- Process only rows with `status in ["ok", "fixed"]`
-- Automatically skip rows with `status: "skipped"`
-- Use `FormAutomation.fill_form(url, data, submit=True)` for each student
-- Track elapsed time
-- Handle pause/resume state
-- Kill = full reset (no resume)
-
----
-
-### Phase 6: Frontend - Tab 2 Submission Interface
-
-**Goal**: Build submission UI with live progress tracking
-
-**File to Update**:
-- `frontend/components/Tab2Submit.tsx`
-
-**Features to Build**:
-
-✅ **Data Loading**:
-- Load cleaned data from localStorage on mount
-- Display: "X students ready to submit (Y skipped rows will be ignored)"
-- Show target URL
-
-✅ **Control Buttons**:
-```tsx
-- [Start Submission] - Green button, calls POST /submit
-- [Pause] - Yellow button, calls POST /pause
-- [Continue] - Blue button, calls POST /resume (only shown when paused)
-- [Kill Switch] - Red button, calls POST /kill
-```
-
-✅ **Real-Time Display**:
-```tsx
-<ProgressBar value={completed} max={total} />
-
-<Counter>370 / 700 completed</Counter>
-
-<Timer>Elapsed: 2m 35s</Timer>
-
-<LiveLog>
-  <LogEntry success>✓ Row 1: John Doe - Success</LogEntry>
-  <LogEntry error>✗ Row 5: Jane Smith - Failed: Network timeout</LogEntry>
-  ...
-</LiveLog>
-```
-
-✅ **Status Polling**:
-```typescript
-useEffect(() => {
-  const interval = setInterval(async () => {
-    const status = await fetch('/status');
-    updateProgress(status);
-  }, 2000);  // Poll every 2 seconds
-  
-  return () => clearInterval(interval);
-}, []);
-```
-
-✅ **Live Log**:
-- Auto-scroll to latest entry
-- Green text for success (`text-green-600`)
-- Red text for failure (`text-red-600`)
-- Show every row processed
-- Max height with scroll
-
-✅ **Final Summary** (when completed):
-```tsx
-<Summary>
-  Success: 695
-  Failed: 5
-  
-  <FailedRowsTable>
-    Row 5 | Jane Smith | jane@example.com | Error: Network timeout
-    Row 12 | Bob Jones | bob@example.com | Error: Invalid DOB
-    ...
-  </FailedRowsTable>
-  
-  <Button>Download Full Log</Button>
-</Summary>
-```
-
----
-
-### Phase 7: Final Summary & Failed Rows Display
+### Phase 7: Final Summary & Failed Rows Display (MOSTLY DONE)
 
 **Goal**: Display completion summary with failed rows table
 
-**Features**:
-- Success/failure counts
-- Failed rows table (read-only, displayed on screen)
-- No download required to see failed rows
-- Optional: Download full log as CSV
+**Status**: ✅ Implemented in Phase 6 Tab 2 interface!
+
+**What's Done**:
+- ✅ Success/failure counts displayed
+- ✅ Failed rows table shown on completion
+- ✅ All details visible on screen
+- ❌ **NOT YET**: Download full log as CSV (optional feature)
 
 ---
 
@@ -811,7 +1100,7 @@ form-pipeline/
 │   │   └── globals.css         # Global styles ✓
 │   ├── components/
 │   │   ├── Tab1Clean.tsx       # Upload & cleaning UI ✓
-│   │   └── Tab2Submit.tsx      # Submission UI (placeholder)
+│   │   └── Tab2Submit.tsx      # Submission UI ✓ (COMPLETE)
 │   ├── lib/
 │   │   ├── api.ts              # API client ✓
 │   │   └── storage.ts          # localStorage utilities ✓
@@ -821,20 +1110,23 @@ form-pipeline/
 │   └── README.md               ✓
 │
 ├── backend/
-│   ├── main.py                 # FastAPI app (POST /clean ✓, others TODO)
-│   ├── validators.py           # Validation functions ✓
-│   ├── cleaner.py              # SpreadsheetCleaner class ✓
-│   ├── form_automation.py      # FormAutomation class ✓
-│   ├── submission_manager.py   # TODO: Phase 5
-│   ├── test_cleaner.py         # Test suite ✓
-│   ├── inspect_form.py         # Form inspection tool ✓
-│   ├── find_all_inputs.py      # Input discovery tool ✓
-│   ├── create_sample_data.py   # Sample data generator ✓
-│   ├── sample_students.xlsx    # Test data (12 rows) ✓
-│   ├── FORM_SELECTORS.md       # Selector documentation ✓
-│   ├── requirements.txt        ✓
-│   ├── Dockerfile              ✓
-│   └── README.md               ✓
+│   ├── main.py                     # FastAPI app - ALL endpoints ✓
+│   ├── validators.py               # Validation functions ✓
+│   ├── cleaner.py                  # SpreadsheetCleaner class ✓
+│   ├── form_automation.py          # FormAutomation class ✓ (⚠️ HAS BUG)
+│   ├── submission_manager.py       # SubmissionManager class ✓
+│   ├── test_cleaner.py             # Test suite ✓
+│   ├── create_sample_data.py       # Sample data generator (7 rows) ✓
+│   ├── create_sample_30.py         # Large sample generator (30 rows) ✓
+│   ├── sample_students.xlsx        # Test data (7 rows) ✓
+│   ├── sample_30_students.xlsx     # Large test data (30 rows) ✓
+│   ├── FORM_SELECTORS.md           # Selector documentation ✓
+│   ├── requirements.txt            ✓
+│   ├── Dockerfile                  ✓
+│   └── README.md                   ✓
+│   # DELETED FILES (cleanup):
+│   # - inspect_form.py (one-time inspection tool)
+│   # - find_all_inputs.py (one-time discovery tool)
 │
 ├── PROJECT_HANDOFF.md          # THIS FILE
 └── README.md                    ✓
@@ -871,9 +1163,17 @@ form-pipeline/
 
 ---
 
-## 📊 GIT COMMIT HISTORY
+## 📊 GIT COMMIT HISTORY (Recent to Oldest)
 
 ```
+f22eb0f - Fix: Track page usage to avoid recreating page for first student
+234057c - Fix: Create fresh page per student to avoid navigation timeout
+b5c6b64 - Major fix: Reuse single browser context/page across all students
+c4dff3b - Fix: Restart browser on TimeoutError instead of retrying with broken browser
+[... other debugging commits ...]
+[Phase 6] - Tab 2 submission interface implementation
+[Phase 5] - Submission manager and API endpoints
+[cleanup] - Remove inspection/discovery tools (inspect_form.py, find_all_inputs.py)
 95a3f38 - Optimize checkbox selection with direct selectors
 31eb91b - Fix checkbox automation with JavaScript click approach
 34c6a71 - Phase 4: Implement Playwright form automation with selector discovery
@@ -884,68 +1184,94 @@ aeb10a2 - Phase 2: Implement spreadsheet cleaning and validation backend
 9518097 - Phase 1: Initialize project structure with Next.js frontend and FastAPI backend
 ```
 
+**Note**: Multiple debugging commits were made attempting to fix the second submission hang issue.
+
 ---
 
 ## 🚀 INSTRUCTIONS FOR NEW AGENT
 
-### Step 1: Read This File
-When starting a new chat, the user will provide this file. Read it completely to understand:
-- What has been completed (Phases 1-4)
-- What needs to be done (Phases 5-10)
-- All design decisions and constraints
-- Current project structure
+### ⚠️ CRITICAL: Current Status
 
-### Step 2: Verify Current State
-Before starting any new work, verify everything is working:
+**App is 95% complete BUT has a CRITICAL BUG preventing production use!**
 
-```bash
-# Test backend automation
-cd /Users/ericyung/Desktop/form-pipeline/backend
-source venv/bin/activate
-python form_automation.py
-# Should show: Success: True
+**What works**: First submission of any spreadsheet works perfectly  
+**What's broken**: Second submission hangs on Row 3 (Playwright lifecycle issue)
 
-# Check git history
-git log --oneline | head -10
-# Should show commits up to 95a3f38
-```
+### Step 1: Read This File Completely
+This file contains:
+- ✅ Phases 1-6 complete (all features built!)
+- ❌ **CRITICAL BUG**: Second submission hanging issue
+- 📊 Detailed debugging history (3 attempts made)
+- 🎯 Suggested next steps to fix the bug
+- 📁 Complete code state
 
-### Step 3: Understand What's Next
-**Phase 5** is the next task:
-- Build submission API endpoints
-- Create state management
-- Implement pause/resume/kill controls
-- Use existing `FormAutomation` class
-
-### Step 4: Key Resources Available
-- ✅ FormAutomation class ready (`backend/form_automation.py`)
-- ✅ Sample data available (`backend/sample_students.xlsx`)
-- ✅ All selectors documented (`backend/FORM_SELECTORS.md`)
-- ✅ Frontend Tab 1 complete and working
-- ✅ localStorage structure defined
-
-### Step 5: Build Phase 5
-Create these files:
-1. `backend/submission_manager.py`
-2. Update `backend/main.py` with new endpoints
+### Step 2: Understand the Bug
+**READ THE "CRITICAL ISSUE" SECTION ABOVE CAREFULLY**
 
 Key points:
-- Process only rows with `status in ["ok", "fixed"]`
-- Skip rows with `status: "skipped"`
-- Call `FormAutomation.fill_form(url, data, submit=True)`
-- Track progress and state
-- Handle pause/resume/kill
+- First submission: Works perfectly ✅
+- Second submission: Hangs on Row 3 ❌
+- Issue: Playwright page/context lifecycle management
+- Location: `backend/form_automation.py` lines 98-107
+- Symptom: Silent hang (no errors), just stops processing
+
+### Step 3: Test and Reproduce
+```bash
+# Start backend
+cd /Users/ericyung/Desktop/form-pipeline/backend
+source venv/bin/activate
+uvicorn main:app --port 8000
+
+# Start frontend (new terminal)
+cd /Users/ericyung/Desktop/form-pipeline/frontend
+npm run dev
+
+# Test flow (see detailed steps in "Testing Instructions" section above)
+# You WILL reproduce the bug on second submission
+```
+
+### Step 4: Debug Approaches to Try
+
+**Priority 1**: Add comprehensive logging
+- Log before/after `page.close()`
+- Log before/after `context.new_page()`
+- Identify exactly where it hangs
+
+**Priority 2**: Add timeouts
+- `await asyncio.wait_for(self.page.close(), timeout=5.0)`
+- Catch timeout exceptions
+
+**Priority 3**: Try recreating context
+- Instead of just page, recreate context too
+- See suggested code in "Hypotheses to Test" section
+
+**Priority 4**: Research Playwright docs
+- Best practices for page lifecycle
+- Context reuse vs recreation
+- Browser cleanup between sessions
+
+### Step 5: DO NOT Start New Features
+- Phase 7-10 can wait
+- Docker deployment can wait
+- **MUST FIX THIS BUG FIRST**
+- App is unusable without fix
 
 ### Step 6: Commit Pattern
-Follow the established pattern:
+Continue the debugging commit pattern:
 ```bash
-git add .
-git commit -m "Phase 5: [Description of what was built]
+git add backend/form_automation.py
+git commit -m "Debug: [What you tried]
 
-- Bullet point 1
-- Bullet point 2
-- etc."
+- What change was made
+- Result (success/failure)
+- Next steps"
+git push
 ```
+
+### Key Files to Focus On:
+1. `backend/form_automation.py` - **THE FILE WITH THE BUG**
+2. `backend/submission_manager.py` - May need changes too
+3. Test with `sample_students.xlsx` (7 rows is sufficient)
 
 ---
 
@@ -959,21 +1285,35 @@ git commit -m "Phase 5: [Description of what was built]
 - ✅ localStorage persistence
 - ✅ Playwright form automation
 - ✅ Checkbox clicking (optimized)
+- ✅ Submission API endpoints (POST /submit, GET /status, POST /pause, POST /resume, POST /kill)
+- ✅ State management (SubmissionManager)
+- ✅ Pause/resume/kill controls
+- ✅ Tab 2 UI complete
+- ✅ Progress tracking with live updates
+- ✅ Live log display with auto-scroll
+- ✅ Final summary with failed rows table
+- ✅ Client-side timer for smooth display
+
+### Critical Issues:
+- ❌ **BLOCKER**: Second submission hangs on Row 3 (Playwright page/context lifecycle issue)
+- ❌ Pause button doesn't work during hang
 
 ### Not Yet Built:
-- ❌ Submission API endpoints
-- ❌ State management
-- ❌ Pause/resume/kill controls
-- ❌ Tab 2 UI
-- ❌ Progress tracking
-- ❌ Live log display
-- ❌ Final summary
+- ❌ Download log as CSV (optional Phase 7 feature)
+- ❌ Docker deployment configuration
+- ❌ Cloud Run deployment
+- ❌ Vercel deployment
+- ❌ Production CORS configuration
 
 ### Important Files to Know:
-- `backend/form_automation.py` - Ready to use for form filling
+- `backend/form_automation.py` - ⚠️ **CRITICAL** - Contains Playwright lifecycle bug
+- `backend/submission_manager.py` - State management for submissions
+- `backend/main.py` - All API endpoints
 - `backend/validators.py` - All validation logic
+- `frontend/components/Tab1Clean.tsx` - Upload & cleaning UI
+- `frontend/components/Tab2Submit.tsx` - Submission UI with live tracking
+- `frontend/lib/api.ts` - API client functions
 - `frontend/lib/storage.ts` - localStorage structure
-- `frontend/components/Tab1Clean.tsx` - Reference for Tab 2 UI
 
 ---
 
