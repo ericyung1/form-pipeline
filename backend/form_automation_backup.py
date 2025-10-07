@@ -103,34 +103,33 @@ class FormAutomation:
                 # Wait a bit for form to process
                 await asyncio.sleep(1)
                 
-                # Check consent checkboxes - DIRECTLY using known selectors (no searching!)
-                logger.info("Checking consent checkboxes...")
+                # Check consent checkboxes using JavaScript (more reliable for custom checkboxes)
+                logger.info("Attempting to check consent checkboxes...")
                 try:
-                    # Use JavaScript to directly click the exact checkboxes we need
-                    checkbox_result = await page.evaluate(f'''() => {{
-                        const checkbox1 = document.querySelector('{SELECTORS['consent_checkbox_1']}');
-                        const checkbox2 = document.querySelector('{SELECTORS['consent_checkbox_2']}');
+                    # Use JavaScript to find and click the last 2 checkboxes
+                    # These are the consent checkboxes before the submit button
+                    checkbox_result = await page.evaluate('''() => {
+                        const allCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                        const consentCheckboxes = allCheckboxes.slice(-2);
                         let results = [];
                         
-                        if (checkbox1) {{
-                            if (!checkbox1.checked) {{
-                                checkbox1.click();
-                            }}
-                            results.push({{id: 1, checked: checkbox1.checked}});
-                        }}
-                        
-                        if (checkbox2) {{
-                            if (!checkbox2.checked) {{
-                                checkbox2.click();
-                            }}
-                            results.push({{id: 2, checked: checkbox2.checked}});
-                        }}
+                        consentCheckboxes.forEach((checkbox, index) => {
+                            if (!checkbox.checked) {
+                                checkbox.click();
+                                results.push({index: index + 1, checked: checkbox.checked});
+                            } else {
+                                results.push({index: index + 1, checked: true, already: true});
+                            }
+                        });
                         
                         return results;
-                    }}''')
+                    }''')
                     
                     for result in checkbox_result:
-                        logger.info(f"✓ Consent checkbox {result['id']} checked: {result['checked']}")
+                        if result.get('already'):
+                            logger.info(f"✓ Consent checkbox {result['index']} already checked")
+                        else:
+                            logger.info(f"✓ Consent checkbox {result['index']} clicked (now checked: {result['checked']})")
                     
                 except Exception as e:
                     logger.warning(f"Checkbox checking failed: {str(e)} - continuing anyway")
