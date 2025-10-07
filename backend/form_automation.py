@@ -34,9 +34,7 @@ class FormAutomation:
     async def start(self):
         """Initialize Playwright and browser."""
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=True  # Back to headless for now
-        )
+        self.browser = await self.playwright.chromium.launch(headless=True)
         logger.info("Browser launched successfully")
     
     async def stop(self):

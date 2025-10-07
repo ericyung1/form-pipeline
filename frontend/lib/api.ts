@@ -72,3 +72,89 @@ function base64ToBlob(base64: string, contentType: string): Blob {
   return new Blob([byteArray], { type: contentType });
 }
 
+// Submission API Types
+export interface LogEntry {
+  row: number;
+  status: 'success' | 'failed';
+  student: string;
+  error?: string;
+  timestamp: string;
+}
+
+export interface SubmissionStatus {
+  completed: number;
+  total: number;
+  elapsed_seconds: number;
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'killed';
+  current_position: number;
+  failed: number;
+  log: LogEntry[];
+  errors: string[];
+}
+
+export interface SubmitRequest {
+  url: string;
+  students: {
+    row_number: number;
+    data: CleanedRow['data'];
+  }[];
+}
+
+// Submission API Functions
+export async function startSubmission(request: SubmitRequest): Promise<{ status: string; total: number }> {
+  const response = await fetch(`${API_URL}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to start submission');
+  }
+
+  return response.json();
+}
+
+export async function getSubmissionStatus(): Promise<SubmissionStatus> {
+  const response = await fetch(`${API_URL}/status`);
+  
+  if (!response.ok) {
+    throw new Error('Failed to get submission status');
+  }
+
+  return response.json();
+}
+
+export async function pauseSubmission(): Promise<{ status: string; position: number }> {
+  const response = await fetch(`${API_URL}/pause`, { method: 'POST' });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to pause submission');
+  }
+
+  return response.json();
+}
+
+export async function resumeSubmission(): Promise<{ status: string; resumed_from: number }> {
+  const response = await fetch(`${API_URL}/resume`, { method: 'POST' });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to resume submission');
+  }
+
+  return response.json();
+}
+
+export async function killSubmission(): Promise<{ status: string; final_position: number }> {
+  const response = await fetch(`${API_URL}/kill`, { method: 'POST' });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to kill submission');
+  }
+
+  return response.json();
+}
