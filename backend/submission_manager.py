@@ -258,9 +258,6 @@ class SubmissionManager:
                 
                 # Move to next student
                 self.state['current_position'] += 1
-                
-                # Small delay between submissions to avoid rate limiting
-                await asyncio.sleep(0.5)
             
             # All done
             self.state['status'] = 'completed'

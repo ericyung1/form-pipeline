@@ -104,9 +104,6 @@ class FormAutomation:
                 logger.info(f"Filling ZIP: {student_data['Zip Code']}")
                 await page.fill(SELECTORS['zip_code'], student_data['Zip Code'])
                 
-                # Wait a bit for form to process
-                await asyncio.sleep(1)
-                
                 # Check consent checkboxes - DIRECTLY using known selectors (no searching!)
                 logger.info("Checking consent checkboxes...")
                 try:

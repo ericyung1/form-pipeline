@@ -51,7 +51,7 @@ export default function Tab2Submit() {
       } catch (err: any) {
         console.error('Failed to fetch status:', err);
       }
-    }, 2000); // Poll every 2 seconds
+    }, 1000); // Poll every 1 second for smoother updates
 
     return () => clearInterval(interval);
   }, [isSubmitting]);
