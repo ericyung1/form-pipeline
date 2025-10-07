@@ -127,8 +127,8 @@ export default function Tab1Clean() {
           type="url"
           value={targetUrl}
           onChange={(e) => setTargetUrl(e.target.value)}
-          placeholder="https://www.goarmy.com/info?iom=..."
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          placeholder="Paste the link here"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-400"
         />
       </div>
 
