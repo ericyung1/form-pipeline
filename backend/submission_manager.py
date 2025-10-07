@@ -203,11 +203,6 @@ class SubmissionManager:
                 try:
                     # Fill and submit the form
                     # NOTE: Change submit=True when ready for production
-                    # Restart browser if disconnected
-                    if not self.automation.browser or not self.automation.browser.is_connected():
-                        logger.warning("Browser disconnected, restarting...")
-                        await self.automation.stop()
-                        await self.automation.start()
                     
                     result = await self.automation.fill_form(
                         url=self.url,
@@ -243,8 +238,23 @@ class SubmissionManager:
                 
                 except Exception as e:
                     # Exception during submission
-                    self.state['failed'] += 1
                     error_msg = str(e)
+                    logger.error(f"✗ Row {row_number}: Exception - {student_name} - {error_msg}")
+                    
+                    # If browser-related error, try to restart browser
+                    if "browser" in error_msg.lower() or "closed" in error_msg.lower() or "disconnected" in error_msg.lower():
+                        logger.warning("Browser error detected, attempting restart...")
+                        try:
+                            await asyncio.wait_for(self.automation.stop(), timeout=3.0)
+                        except:
+                            pass
+                        try:
+                            await self.automation.start()
+                            logger.info("Browser restarted successfully")
+                        except Exception as restart_error:
+                            logger.error(f"Failed to restart browser: {restart_error}")
+                    
+                    self.state['failed'] += 1
                     log_entry = {
                         'row': row_number,
                         'status': 'failed',
@@ -254,7 +264,6 @@ class SubmissionManager:
                     }
                     self.state['log'].append(log_entry)
                     self.state['errors'].append(f"Row {row_number}: {error_msg}")
-                    logger.error(f"✗ Row {row_number}: Exception - {student_name} - {error_msg}")
                 
                 # Move to next student
                 self.state['current_position'] += 1
