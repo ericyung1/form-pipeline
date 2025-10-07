@@ -155,7 +155,7 @@ class FormAutomation:
                 # Clean up and return
                 if context:
                     try:
-                        await context.close()
+                        await asyncio.wait_for(context.close(), timeout=2.0)
                     except:
                         pass
                 
@@ -167,7 +167,7 @@ class FormAutomation:
                 # Clean up failed context before retry
                 if context:
                     try:
-                        await context.close()
+                        await asyncio.wait_for(context.close(), timeout=2.0)
                     except:
                         pass
                     context = None
