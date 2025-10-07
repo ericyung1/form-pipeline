@@ -89,11 +89,22 @@ class FormAutomation:
                 if not self.browser or not self.browser.is_connected():
                     raise Exception("Browser is not connected")
 
-                # Check if page exists (should have been created in start())
-                if not self.page:
-                    raise Exception("Page not initialized")
+                # Check if context exists
+                if not self.context:
+                    raise Exception("Context not initialized")
                 
-                # Navigate to form (reusing the same page for all students)
+                # Create a fresh page for each student (reuse context to avoid timeout)
+                # Close old page if it exists
+                if self.page:
+                    try:
+                        await self.page.close()
+                    except:
+                        pass
+                
+                # Create new page from existing context
+                self.page = await self.context.new_page()
+                
+                # Navigate to form with fresh page
                 logger.info(f"Navigating to: {url}")
                 await self.page.goto(url, wait_until="networkidle", timeout=30000)
                 
