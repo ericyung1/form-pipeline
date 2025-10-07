@@ -71,10 +71,18 @@ class FormAutomation:
                 # Check if browser is still connected
                 if not self.browser or not self.browser.is_connected():
                     raise Exception("Browser is not connected")
-                
-                # Create new context for each attempt
-                context = await self.browser.new_context()
-                page = await context.new_page()
+
+                # Create new context for each attempt (with timeout to prevent hanging)
+                logger.debug("Creating new browser context...")
+                context = await asyncio.wait_for(
+                    self.browser.new_context(),
+                    timeout=10.0
+                )
+                logger.debug("Creating new page...")
+                page = await asyncio.wait_for(
+                    context.new_page(),
+                    timeout=10.0
+                )
                 
                 # Navigate to form
                 logger.info(f"Navigating to: {url}")
