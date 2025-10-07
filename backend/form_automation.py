@@ -169,8 +169,39 @@ class FormAutomation:
                 
                 return result
                 
+            except asyncio.TimeoutError:
+                error_msg = "Browser context creation timed out"
+                logger.error(f"Attempt {attempt + 1} failed: {error_msg}")
+                
+                # Timeout means browser is stuck - restart it completely
+                logger.warning("Restarting browser due to timeout...")
+                try:
+                    await asyncio.wait_for(self.stop(), timeout=3.0)
+                except:
+                    pass
+                
+                if attempt < max_retries - 1:
+                    # Restart browser before retry
+                    try:
+                        await self.start()
+                        logger.info(f"Browser restarted, retrying... ({attempt + 2}/{max_retries})")
+                    except Exception as restart_error:
+                        logger.error(f"Failed to restart browser: {restart_error}")
+                        return {
+                            'success': False,
+                            'message': f'Failed to restart browser after timeout: {restart_error}',
+                            'student': f"{student_data.get('First Name', 'Unknown')} {student_data.get('Last Name', 'Unknown')}"
+                        }
+                else:
+                    return {
+                        'success': False,
+                        'message': f'Failed after {max_retries} attempts: {error_msg}',
+                        'student': f"{student_data.get('First Name', 'Unknown')} {student_data.get('Last Name', 'Unknown')}"
+                    }
+                    
             except Exception as e:
-                logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
+                error_msg = str(e) if str(e) else "Unknown error"
+                logger.error(f"Attempt {attempt + 1} failed: {error_msg}")
                 
                 # Clean up failed context before retry
                 if context:
@@ -186,7 +217,7 @@ class FormAutomation:
                 else:
                     return {
                         'success': False,
-                        'message': f'Failed after {max_retries} attempts: {str(e)}',
+                        'message': f'Failed after {max_retries} attempts: {error_msg}',
                         'student': f"{student_data.get('First Name', 'Unknown')} {student_data.get('Last Name', 'Unknown')}"
                     }
         
