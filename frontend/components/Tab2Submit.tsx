@@ -20,6 +20,7 @@ export default function Tab2Submit() {
   const [status, setStatus] = useState<SubmissionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localElapsedSeconds, setLocalElapsedSeconds] = useState(0);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   // Load data from localStorage on mount
@@ -34,6 +35,27 @@ export default function Tab2Submit() {
       setSkippedCount(skipped.length);
     }
   }, []);
+
+  // Local timer - runs independently in browser for smooth counting
+  useEffect(() => {
+    if (status?.status !== 'running') return;
+
+    const interval = setInterval(() => {
+      setLocalElapsedSeconds(prev => prev + 1);
+    }, 1000); // Increment every second locally
+
+    return () => clearInterval(interval);
+  }, [status?.status]);
+
+  // Reset local timer when starting fresh
+  useEffect(() => {
+    if (status?.status === 'running' && localElapsedSeconds === 0) {
+      setLocalElapsedSeconds(1);
+    }
+    if (status?.status === 'idle' || status?.status === 'completed' || status?.status === 'killed') {
+      if (status?.status === 'idle') setLocalElapsedSeconds(0);
+    }
+  }, [status?.status]);
 
   // Poll status when submitting
   useEffect(() => {
@@ -51,7 +73,7 @@ export default function Tab2Submit() {
       } catch (err: any) {
         console.error('Failed to fetch status:', err);
       }
-    }, 1000); // Poll every 1 second for smoother updates
+    }, 1000); // Poll every 1 second for backend updates
 
     return () => clearInterval(interval);
   }, [isSubmitting]);
@@ -70,6 +92,7 @@ export default function Tab2Submit() {
     }
 
     setError(null);
+    setLocalElapsedSeconds(0); // Reset local timer
     setIsSubmitting(true);
 
     try {
@@ -212,7 +235,7 @@ export default function Tab2Submit() {
               <div className="text-sm text-gray-600">Failed</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{formatTime(status.elapsed_seconds)}</div>
+              <div className="text-2xl font-bold text-blue-600">{formatTime(localElapsedSeconds)}</div>
               <div className="text-sm text-gray-600">Elapsed</div>
             </div>
             <div className="text-center">
@@ -287,7 +310,7 @@ export default function Tab2Submit() {
             ✓ All submissions completed successfully!
           </div>
           <p className="text-gray-600">
-            {status.completed} student{status.completed > 1 ? 's' : ''} submitted in {formatTime(status.elapsed_seconds)}
+            {status.completed} student{status.completed > 1 ? 's' : ''} submitted in {formatTime(localElapsedSeconds)}
           </p>
         </div>
       )}
