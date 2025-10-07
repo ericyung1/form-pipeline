@@ -47,7 +47,7 @@ https://www.goarmy.com/info?iom=CKXG-XX_LAP_Exhibit_2897052_C04_NA_ROTC
 - ✅ ZIP Code (5 digits)
 
 ### Checkboxes:
-- ⚠️  Consent checkboxes partially working (may need manual testing)
+- ✅ Consent checkboxes working (using JavaScript click)
 
 ### Submit Button:
 - ❌ NOT tested (intentionally - manual testing required)

@@ -103,24 +103,34 @@ class FormAutomation:
                 # Wait a bit for form to process
                 await asyncio.sleep(1)
                 
-                # Try to check consent checkboxes (optional - may need manual adjustment)
+                # Check consent checkboxes using JavaScript (more reliable for custom checkboxes)
                 logger.info("Attempting to check consent checkboxes...")
                 try:
-                    # Try finding checkboxes with more flexible selectors
-                    checkboxes = await page.query_selector_all('input[type="checkbox"]')
-                    logger.info(f"Found {len(checkboxes)} checkboxes on page")
+                    # Use JavaScript to find and click the last 2 checkboxes
+                    # These are the consent checkboxes before the submit button
+                    checkbox_result = await page.evaluate('''() => {
+                        const allCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                        const consentCheckboxes = allCheckboxes.slice(-2);
+                        let results = [];
+                        
+                        consentCheckboxes.forEach((checkbox, index) => {
+                            if (!checkbox.checked) {
+                                checkbox.click();
+                                results.push({index: index + 1, checked: checkbox.checked});
+                            } else {
+                                results.push({index: index + 1, checked: true, already: true});
+                            }
+                        });
+                        
+                        return results;
+                    }''')
                     
-                    # Check the last two checkboxes (usually the consent ones)
-                    if len(checkboxes) >= 2:
-                        for i, checkbox in enumerate(checkboxes[-2:], 1):
-                            try:
-                                await checkbox.scroll_into_view_if_needed()
-                                await checkbox.check(timeout=2000)
-                                logger.info(f"✓ Checked consent checkbox {i}")
-                            except:
-                                logger.warning(f"Could not check checkbox {i}")
-                    else:
-                        logger.warning(f"Not enough checkboxes found (need 2, found {len(checkboxes)})")
+                    for result in checkbox_result:
+                        if result.get('already'):
+                            logger.info(f"✓ Consent checkbox {result['index']} already checked")
+                        else:
+                            logger.info(f"✓ Consent checkbox {result['index']} clicked (now checked: {result['checked']})")
+                    
                 except Exception as e:
                     logger.warning(f"Checkbox checking failed: {str(e)} - continuing anyway")
                 
