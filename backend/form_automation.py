@@ -32,6 +32,7 @@ class FormAutomation:
         self.playwright = None
         self.context = None  # Reuse same context across students
         self.page = None
+        self.page_used = False  # Track if page has been used
     
     async def start(self):
         """Initialize Playwright and browser."""
@@ -40,6 +41,7 @@ class FormAutomation:
         # Create a single context and page to reuse across all students
         self.context = await self.browser.new_context()
         self.page = await self.context.new_page()
+        self.page_used = False  # Reset flag for new browser session
         logger.info("Browser launched successfully")
     
     async def stop(self):
@@ -93,18 +95,18 @@ class FormAutomation:
                 if not self.context:
                     raise Exception("Context not initialized")
                 
-                # Create a fresh page for each student (reuse context to avoid timeout)
-                # Close old page if it exists
-                if self.page:
+                # For 2nd+ students, create fresh page to avoid dirty state
+                # For 1st student, use the page created in start()
+                if self.page_used:
+                    # Page has been used for previous student - close and recreate
                     try:
                         await self.page.close()
                     except:
                         pass
+                    self.page = await self.context.new_page()
+                    logger.debug("Created fresh page for next student")
                 
-                # Create new page from existing context
-                self.page = await self.context.new_page()
-                
-                # Navigate to form with fresh page
+                # Navigate to form
                 logger.info(f"Navigating to: {url}")
                 await self.page.goto(url, wait_until="networkidle", timeout=30000)
                 
@@ -173,7 +175,10 @@ class FormAutomation:
                 else:
                     logger.info("✓ Form filled (NOT submitted - testing mode)")
                 
-                # Success! Return result (page will be reused for next student)
+                # Mark page as used so next student gets fresh page
+                self.page_used = True
+                
+                # Success! Return result
                 return {
                     'success': True,
                     'message': 'Form submitted' if submit else 'Form filled successfully (not submitted)',
@@ -201,6 +206,7 @@ class FormAutomation:
                         # Recreate context and page
                         self.context = await self.browser.new_context()
                         self.page = await self.context.new_page()
+                        self.page_used = False  # Fresh page, reset flag
                         logger.info("Page recreated successfully")
                     except Exception as recreate_error:
                         logger.error(f"Failed to recreate page: {recreate_error}")
