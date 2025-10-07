@@ -223,13 +223,27 @@ export default function Tab1Clean() {
         </div>
       )}
 
-      {/* Download Button */}
+      {/* Download Button - Floating Icon on Bottom Right */}
       {cleanedFile && (
         <button
           onClick={handleDownload}
-          className="w-full bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
+          className="fixed bottom-8 right-8 bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition-all hover:scale-110 z-50"
+          title="Download Cleaned Spreadsheet"
         >
-          Download Cleaned Spreadsheet
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+            className="w-6 h-6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+            />
+          </svg>
         </button>
       )}
 
@@ -275,7 +289,7 @@ export default function Tab1Clean() {
                         : ''
                     }
                   >
-                    <td className="px-4 py-3 text-sm">{row.row_number}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.row_number}</td>
                     <td className="px-4 py-3 text-sm">
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -289,13 +303,13 @@ export default function Tab1Clean() {
                         {row.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm">{row.data['Email Address']}</td>
-                    <td className="px-4 py-3 text-sm">{row.data['First Name']}</td>
-                    <td className="px-4 py-3 text-sm">{row.data['Last Name']}</td>
-                    <td className="px-4 py-3 text-sm">{row.data['Phone']}</td>
-                    <td className="px-4 py-3 text-sm">{row.data['Date of Birth']}</td>
-                    <td className="px-4 py-3 text-sm">{row.data['Zip Code']}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{row.note}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.data['Email Address']}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.data['First Name']}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.data['Last Name']}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.data['Phone']}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.data['Date of Birth']}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{row.data['Zip Code']}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{row.note}</td>
                   </tr>
                 ))}
               </tbody>
