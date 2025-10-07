@@ -123,12 +123,6 @@ Example:
 bsavila03@gmail.com | Brithany | Avila | 7088828259 | 3/16/2007 | 60163
 ```
 
-## 🎯 Target Form
-
-Currently configured for: https://www.goarmy.com/info?iom=CKXG-XX_LAP_Exhibit_2897052_C04_NA_ROTC
-
-All target URLs must share the same HTML structure.
-
 ## 📊 Tech Stack
 
 ### Frontend
