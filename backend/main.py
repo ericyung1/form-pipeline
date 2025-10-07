@@ -1,8 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pydantic import BaseModel
+from typing import List, Dict
 import base64
 from cleaner import SpreadsheetCleaner
+from submission_manager import submission_manager
 
 app = FastAPI(title="Form Pipeline API")
 
@@ -14,6 +17,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Pydantic models for request bodies
+class StudentData(BaseModel):
+    row_number: int
+    data: Dict[str, str]
+
+class SubmitRequest(BaseModel):
+    url: str
+    students: List[StudentData]
 
 @app.get("/")
 async def root():
@@ -68,3 +80,94 @@ async def clean_spreadsheet(file: UploadFile = File(...)):
         "filename": f"cleaned_{file.filename}"
     }
 
+@app.post("/submit")
+async def submit_forms(request: SubmitRequest):
+    """
+    Start batch form submission.
+    
+    Processes students one by one, filling and submitting forms.
+    Returns job status with total count.
+    """
+    try:
+        # Convert Pydantic models to dicts for processing
+        students_data = [
+            {
+                'row_number': student.row_number,
+                'data': student.data
+            }
+            for student in request.students
+        ]
+        
+        result = await submission_manager.start_submission(
+            url=request.url,
+            students=students_data
+        )
+        
+        return result
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+@app.get("/status")
+async def get_status():
+    """
+    Get current submission status.
+    
+    Returns progress, logs, errors, and elapsed time.
+    Polls this endpoint for real-time updates.
+    """
+    return submission_manager.get_status()
+
+@app.post("/pause")
+async def pause_submission():
+    """
+    Pause submission at current position.
+    
+    Can be resumed later from the same position.
+    """
+    try:
+        result = await submission_manager.pause()
+        return result
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+@app.post("/resume")
+async def resume_submission():
+    """
+    Resume paused submission.
+    
+    Continues from the position where it was paused.
+    """
+    try:
+        result = await submission_manager.resume()
+        return result
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+@app.post("/kill")
+async def kill_submission():
+    """
+    Stop submission completely.
+    
+    Cannot be resumed - requires starting over.
+    """
+    try:
+        result = await submission_manager.kill()
+        return result
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
