@@ -34,7 +34,9 @@ class FormAutomation:
     async def start(self):
         """Initialize Playwright and browser."""
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
+        self.browser = await self.playwright.chromium.launch(
+            headless=True  # Back to headless for now
+        )
         logger.info("Browser launched successfully")
     
     async def stop(self):
@@ -65,10 +67,14 @@ class FormAutomation:
             Dictionary with status and message
         """
         context = None
+        page = None
         for attempt in range(max_retries):
             try:
-                if context:
-                    await context.close()
+                # Check if browser is still connected
+                if not self.browser or not self.browser.is_connected():
+                    raise Exception("Browser is not connected")
+                
+                # Create new context for each attempt
                 context = await self.browser.new_context()
                 page = await context.new_page()
                 
@@ -151,15 +157,25 @@ class FormAutomation:
                     'student': f"{student_data['First Name']} {student_data['Last Name']}"
                 }
                 
-                try:
-                    await context.close()
-                except:
-                    pass
+                # Clean up and return
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
                 
                 return result
                 
             except Exception as e:
                 logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
+                
+                # Clean up failed context before retry
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    context = None
                 
                 if attempt < max_retries - 1:
                     logger.info(f"Retrying... ({attempt + 2}/{max_retries})")
@@ -170,13 +186,6 @@ class FormAutomation:
                         'message': f'Failed after {max_retries} attempts: {str(e)}',
                         'student': f"{student_data.get('First Name', 'Unknown')} {student_data.get('Last Name', 'Unknown')}"
                     }
-            
-            finally:
-                if context:
-                    try:
-                        await context.close()
-                    except:
-                        pass
         
         return {
             'success': False,

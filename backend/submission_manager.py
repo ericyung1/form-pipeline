@@ -203,6 +203,12 @@ class SubmissionManager:
                 try:
                     # Fill and submit the form
                     # NOTE: Change submit=True when ready for production
+                    # Restart browser if disconnected
+                    if not self.automation.browser or not self.automation.browser.is_connected():
+                        logger.warning("Browser disconnected, restarting...")
+                        await self.automation.stop()
+                        await self.automation.start()
+                    
                     result = await self.automation.fill_form(
                         url=self.url,
                         student_data=student_data,
